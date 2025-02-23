@@ -5,6 +5,7 @@ out/
 .idea/
 mnist_test.csv
 mnist_train.csv
+*.iml
 
 ### Eclipse ###
 .apt_generated
