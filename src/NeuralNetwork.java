@@ -33,6 +33,7 @@ public class NeuralNetwork {
                 // activation gradient is negative for the correct digit
                 lastLayerGradient.data[0][col] = (col == currentDigit) ? -1 : 1;
             }
+            lastLayerActivationGradients[currentDigit] = lastLayerGradient;
         }
     }
 
@@ -61,18 +62,16 @@ public class NeuralNetwork {
     }
 
     public void feedForwardAndSetActivations(Matrix image) {
-        activations = new Matrix[layerCount];
+        activations = new Matrix[layerCount + 1]; // add 1 because image counts as activation
 
-        // initialize first activation layer
-        image = image.multiply(weights[0]);
-        image.addAndSigmoid(biases[0], true);
+        // initialize first activation layer (image)
         activations[0] = image;
 
-        for(int i = 1; i < layerCount; i++) {
+        for(int i = 0; i < layerCount; i++) {
             // use previous activation layer to feed forward
-            Matrix tempImage = activations[i-1].multiply(weights[i]);
+            Matrix tempImage = activations[i].multiply(weights[i]);
             tempImage.addAndSigmoid(biases[i], true);
-            activations[i] = tempImage;
+            activations[i+1] = tempImage;
         }
     }
 
@@ -101,36 +100,56 @@ public class NeuralNetwork {
 
     private void backprop(Matrix image, int correctDigit) {
         feedForwardAndSetActivations(image);
-        recursiveBackprop(layerCount - 1, lastLayerActivationGradients[correctDigit]);
+        recursiveBackprop(layerCount, lastLayerActivationGradients[correctDigit]);
     }
 
-    private void recursiveBackprop(int layerIndex, Matrix nextLayerGradient) {
-        if(layerIndex < 0)
+    private void recursiveBackprop(int layerIndex, Matrix currentLayerGradient) {
+        if(layerIndex <= 0) // if layer index is 0, we are trying to change the image (not possible)
             return;
 
-        Matrix currentActivationLayer = activations[layerIndex - 1];
+        Matrix currentActivationLayer = activations[layerIndex];
+        Matrix previousActivationLayer = activations[layerIndex - 1];
 
         // calculate bias changes
         for(int col = 0; col < currentActivationLayer.data[0].length; col++) {
             double sigmoid = currentActivationLayer.data[0][col];
             double negativeGradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1) * -1;
-            negativeGradient *= nextLayerGradient.data[0][col];
-            biasChanges[layerIndex].data[0][col] += negativeGradient;
+            negativeGradient *= currentLayerGradient.data[0][col];
+            biasChanges[layerIndex - 1].data[0][col] += negativeGradient;
         }
 
         // calculate weight changes
         for(int col = 0; col < currentActivationLayer.data[0].length; col++) {
             double sigmoid = currentActivationLayer.data[0][col];
             double negativeGradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1) * -1;
-            // todo: finish this
+            int activationsInPrevLayer = previousActivationLayer.data[0].length;
+            for(int weightIndex = 0; weightIndex < activationsInPrevLayer; weightIndex++) {
+                // scale weight gradient by its corresponding activation
+                double gradientFactor = previousActivationLayer.data[0][weightIndex];
+                gradientFactor *= currentLayerGradient.data[0][col];
+                weightChanges[layerIndex - 1].data[weightIndex][col] = gradientFactor * negativeGradient;
+            }
         }
 
-        // calculate current layer gradient for next step of backprop
-        if(layerIndex > 0) {
-            Matrix currentActivationGradients = new Matrix(1, currentActivationLayer.data[0].length);
-            // todo: finish this
-            recursiveBackprop(layerIndex - 1, currentActivationGradients);
+        // calculate previous layer gradient for next step of backprop
+        // currentLayerGradient * currentActivationGradient = previousLayerGradient
+
+        // currentActivationGradient is a matrix of dx/da for all a_j and x_i
+        // a_j is a previous layer activation and x_i is a current layer activation
+        int currentActivations = currentActivationLayer.data[0].length;
+        int previousActivations = previousActivationLayer.data[0].length;
+        Matrix currentActivationGradients = new Matrix(currentActivations, previousActivations);
+        for(int i = 0; i < currentActivations; i++) {
+            double sigmoid = currentActivationLayer.data[0][i];
+            double gradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1);
+            for(int j = 0; j < previousActivations; j++) {
+                double gradientFactor = weights[layerIndex - 1].data[j][i];
+                currentActivationGradients.data[i][j] = gradient * gradientFactor;
+            }
         }
+
+        Matrix previousLayerGradient = currentLayerGradient.multiply(currentActivationGradients);
+        recursiveBackprop(layerIndex - 1, previousLayerGradient);
     }
 
     private void updateWeightsAndBiases() {
@@ -148,10 +167,12 @@ public class NeuralNetwork {
     }
 
     private void instantiateTrainingMatrices() {
+        weightChanges = new Matrix[weights.length];
         for(int i = 0; i < weights.length; i++) {
             weightChanges[i] = new Matrix(weights[i].data.length, weights[i].data[0].length);
         }
 
+        biasChanges = new Matrix[biases.length];
         for(int i = 0; i < biases.length; i++) {
             biasChanges[i] = new Matrix(biases[i].data.length, biases[i].data[0].length);
         }

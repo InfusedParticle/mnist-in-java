@@ -13,6 +13,7 @@ public class NetworkTrainer {
 
     public static void main(String[] args) throws IOException {
         NeuralNetwork network = new NeuralNetwork(HIDDEN_LAYERS, NEURONS_PER_HIDDEN_LAYER);
+        testNetwork(network);
         trainNetwork(network);
         testNetwork(network);
     }
