@@ -8,15 +8,10 @@ public class Matrix {
         data = new double[n][m];
     }
 
-    public Matrix(double[] image) {
-        data = new double[1][image.length];
-        System.arraycopy(image, 0, data[0], 0, image.length);
-    }
-
     public void instantiateMatrix() {
         for(int i = 0; i < data.length; i++) {
             for(int j = 0; j < data[0].length; j++) {
-                data[i][j] = Math.random();
+                data[i][j] = Math.random() - 0.5;
             }
         }
     }
@@ -55,7 +50,7 @@ public class Matrix {
             for(int j = 0; j < data[0].length; j++) {
                 data[i][j] += otherMatrix.data[i][j];
                 if(sigmoid) {
-                    data[i][j] = 1 / Math.expm1(-data[i][j]);
+                    data[i][j] = 1.0 / (1 + Math.exp(-data[i][j]));
                 }
             }
         }
