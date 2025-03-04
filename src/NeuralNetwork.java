@@ -138,6 +138,10 @@ public class NeuralNetwork {
     }
 
     private Matrix calculateLastLayerGradient(int correctDigit) {
+        // calculates dC/dx where C is cost and x_i is the ith activation in the output layer
+        // C = mean square error, sum((x_i - expected)^2)
+        // expected == 1 if i is the correct digit, otherwise expected == 0
+        // the partial derivative of C with respect to x_i is 2 * (x_i - expected)
         Matrix result = new Matrix(1, 10);
         for(int i = 0; i < 10; i++) {
             double costGradient;
