@@ -1,3 +1,5 @@
+import java.io.IOException;
+
 public class NeuralNetwork {
     int layerCount;
     int neuronsPerHiddenLayer;
@@ -8,13 +10,12 @@ public class NeuralNetwork {
     Matrix[] weights;
     Matrix[] biases;
 
-    static final int BATCH_SIZE = 30;
-    static final int EPOCHS = 10;
+    static final int BATCH_SIZE = 10;
+    static final int EPOCHS = 20;
     Matrix[] weightChanges;
     Matrix[] biasChanges;
 
     Matrix[] activations;
-    Matrix[] lastLayerActivationGradients;
 
     public NeuralNetwork(int hiddenLayers, int neuronsPerHiddenLayer) {
         if(hiddenLayers <= 0 || neuronsPerHiddenLayer <= 0) {
@@ -22,20 +23,7 @@ public class NeuralNetwork {
         }
         this.layerCount = hiddenLayers + 1;
         this.neuronsPerHiddenLayer = neuronsPerHiddenLayer;
-        setLastLayerActivationGradients();
         instantiateParameters();
-    }
-
-    private void setLastLayerActivationGradients() {
-        lastLayerActivationGradients = new Matrix[10];
-        for(int currentDigit = 0; currentDigit < 10; currentDigit++) {
-            Matrix lastLayerGradient = new Matrix(1, 10);
-            for(int col = 0; col < 10; col++) {
-                // activation gradient is negative for the correct digit
-                lastLayerGradient.data[0][col] = (col == currentDigit) ? -1 : 1;
-            }
-            lastLayerActivationGradients[currentDigit] = lastLayerGradient;
-        }
     }
 
     private void instantiateParameters() {
@@ -84,23 +72,28 @@ public class NeuralNetwork {
         return image;
     }
 
-    private void shuffleTrainingImages(Matrix[] trainingImages) {
+    private void shuffleTrainingImagesAndCorrect(Matrix[] trainingImages, int[] correct) {
         for (int i = 0; i < trainingImages.length; i++) {
             int swapIndex = i + (int) (Math.random() * (trainingImages.length - i));
-            swap(trainingImages, i, swapIndex);
+            swap(trainingImages, correct, i, swapIndex);
         }
     }
 
-    private void swap(Matrix[] arr, int i, int j) {
-        Matrix temp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = temp;
+    private void swap(Matrix[] trainingImages, int[] correct, int i, int j) {
+        Matrix temp = trainingImages[i];
+        trainingImages[i] = trainingImages[j];
+        trainingImages[j] = temp;
+
+        int temp2 = correct[i];
+        correct[i] = correct[j];
+        correct[j] = temp2;
     }
 
     public void train(int[] correct, Matrix[] trainingImages) {
         instantiateTrainingMatrices();
         for(int iterations = 0; iterations < EPOCHS; iterations++) {
-            shuffleTrainingImages(trainingImages);
+            System.out.println("Starting iteration " + iterations);
+            shuffleTrainingImagesAndCorrect(trainingImages, correct);
             for(int i = 0; i < trainingImages.length; i += BATCH_SIZE) {
                 trainBatch(i, correct, trainingImages);
             }
@@ -108,15 +101,54 @@ public class NeuralNetwork {
     }
 
     private void trainBatch(int startIndex, int[] correct, Matrix[] trainingImages) {
-        for(int i = startIndex; i < BATCH_SIZE; i++) {
-            backprop(trainingImages[i], correct[i]);
+        double batchCost = 0;
+        for(int i = startIndex; i < startIndex + BATCH_SIZE; i++) {
+            batchCost += backprop(trainingImages[i], correct[i]);
+        }
+        if(startIndex >= trainingImages.length - BATCH_SIZE - 1) {
+            System.out.println("last batch cost: " + batchCost);
+            try {
+                NetworkTrainer.testNetwork(this);
+            } catch(IOException e) {
+                System.out.println("ioexception");
+            }
         }
         updateWeightsAndBiases();
     }
 
-    private void backprop(Matrix image, int correctDigit) {
+    private double calculateCost(int correctDigit) {
+        double cost = 0;
+        for(int i = 0; i < 10; i++) {
+            double predicted = activations[layerCount].data[0][i];
+            if(i == correctDigit) {
+                cost += (predicted - 1) * (predicted - 1);
+            } else {
+                cost += predicted * predicted;
+            }
+        }
+        return cost;
+    }
+
+    private double backprop(Matrix image, int correctDigit) {
         feedForwardAndSetActivations(image);
-        recursiveBackprop(layerCount, lastLayerActivationGradients[correctDigit]);
+        double cost = calculateCost(correctDigit);
+        Matrix lastLayerGradient = calculateLastLayerGradient(correctDigit);
+        recursiveBackprop(layerCount, lastLayerGradient);
+        return cost;
+    }
+
+    private Matrix calculateLastLayerGradient(int correctDigit) {
+        Matrix result = new Matrix(1, 10);
+        for(int i = 0; i < 10; i++) {
+            double costGradient;
+            if(i == correctDigit) {
+                costGradient = 2 * (activations[layerCount].data[0][i] - 1);
+            } else {
+                costGradient = 2 * activations[layerCount].data[0][i];
+            }
+            result.data[0][i] = costGradient;
+        }
+        return result;
     }
 
     private void recursiveBackprop(int layerIndex, Matrix currentLayerGradient) {
@@ -126,7 +158,8 @@ public class NeuralNetwork {
         // calculate bias changes
         for(int col = 0; col < currentActivationLayer.data[0].length; col++) {
             double sigmoid = currentActivationLayer.data[0][col];
-            double negativeGradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1) * -1;
+            // derivative of sigmoid(x) = sigmoid(x) * (1 - sigmoid(x))
+            double negativeGradient = sigmoid * (1 - sigmoid) * -1;
             negativeGradient *= currentLayerGradient.data[0][col];
             biasChanges[layerIndex - 1].data[0][col] += negativeGradient;
         }
@@ -134,7 +167,7 @@ public class NeuralNetwork {
         // calculate weight changes
         for(int col = 0; col < currentActivationLayer.data[0].length; col++) {
             double sigmoid = currentActivationLayer.data[0][col];
-            double negativeGradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1) * -1;
+            double negativeGradient = sigmoid * (1 - sigmoid) * -1;
             negativeGradient *= currentLayerGradient.data[0][col];
             int activationsInPrevLayer = previousActivationLayer.data[0].length;
             for(int weightIndex = 0; weightIndex < activationsInPrevLayer; weightIndex++) {
@@ -155,7 +188,7 @@ public class NeuralNetwork {
             Matrix currentActivationGradients = new Matrix(currentActivations, previousActivations);
             for(int i = 0; i < currentActivations; i++) {
                 double sigmoid = currentActivationLayer.data[0][i];
-                double gradient = (sigmoid * sigmoid) * ((1.0 / sigmoid) - 1);
+                double gradient = (sigmoid) * (1 - sigmoid);
                 for(int j = 0; j < previousActivations; j++) {
                     double gradientFactor = weights[layerIndex - 1].data[j][i];
                     currentActivationGradients.data[i][j] = gradient * gradientFactor;
